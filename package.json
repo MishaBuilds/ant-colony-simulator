@@ -1,0 +1,17 @@
+{
+  "name": "ant-colony-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive ant colony self-organization simulation (TypeScript + Canvas 2D, no backend)",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "test": "npm run build && node --test \"tests/*.test.js\"",
+    "serve": "node scripts/server.js",
+    "start": "npm run build && node scripts/server.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

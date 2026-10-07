@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Interactive ant colony simulator: watch pheromone trails turn chaotic search into stable routes between nest and food." />
+  <title>Ant Colony Simulator — Self-Organization in Real Time</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%2358d6a8'/%3E%3Ccircle cx='6' cy='8' r='3' fill='%23e8a94e'/%3E%3Ccircle cx='26' cy='9' r='3' fill='%23e8a94e'/%3E%3Ccircle cx='25' cy='25' r='3' fill='%23e8a94e'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- ============================ TOP BAR ============================ -->
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <circle class="bm-nest" cx="16" cy="16" r="5.5" />
+          <circle class="bm-food" cx="5" cy="7" r="2.6" />
+          <circle class="bm-food" cx="27" cy="9" r="2.6" />
+          <circle class="bm-food" cx="24" cy="26" r="2.6" />
+          <path class="bm-trail" d="M16 16 L5 7 M16 16 L27 9 M16 16 L24 26" />
+        </svg>
+        <div class="brand-text">
+          <strong>ANT COLONY</strong>
+          <span>SIMULATOR</span>
+        </div>
+      </div>
+
+      <div class="stats" id="statsBar">
+        <div class="stat"><span class="k">Ants</span><span class="v" id="stAnts">250</span></div>
+        <div class="stat"><span class="k">Delivered</span><span class="v" id="stDelivered">0</span></div>
+        <div class="stat"><span class="k">Food left</span><span class="v" id="stFood">0</span></div>
+        <div class="stat"><span class="k">Time</span><span class="v" id="stTime">0:00</span></div>
+        <div class="stat"><span class="k">Steps</span><span class="v" id="stSteps">0</span></div>
+        <div class="stat"><span class="k">FPS</span><span class="v" id="stFps">60</span></div>
+        <div class="stat stat-wide"><span class="k">Best route</span><span class="v" id="stBest">—</span></div>
+        <div class="stat stat-wide"><span class="k">Avg route</span><span class="v" id="stAvg">—</span></div>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn ghost" id="btnHow" type="button">How it works?</button>
+        <button class="btn toggle" id="btnCalc" type="button" aria-pressed="false">Show calculation</button>
+      </div>
+    </header>
+
+    <!-- ============================= STAGE ============================= -->
+    <main class="stage">
+      <section class="viewport" id="viewport">
+        <canvas id="canvas"></canvas>
+
+        <div class="hud hud-tl">
+          <span class="chip" id="hudMap">Medium · 250 × 250</span>
+          <span class="chip" id="hudScenario">Open field</span>
+        </div>
+
+        <div class="hud hud-bl legend" id="legend">
+          <span class="lg"><i class="sw sw-searching"></i>searching</span>
+          <span class="lg"><i class="sw sw-returning"></i>returning</span>
+          <span class="lg"><i class="sw sw-food-trail"></i>food trail</span>
+          <span class="lg"><i class="sw sw-home-trail"></i>home trail</span>
+          <span class="lg"><i class="sw sw-food"></i>food</span>
+          <span class="lg"><i class="sw sw-nest"></i>nest</span>
+        </div>
+
+        <div class="hud hud-br">
+          <span class="chip" id="hudZoom">100%</span>
+          <button class="chip chip-btn" id="btnFit" type="button" title="Reset camera">Reset view</button>
+        </div>
+
+        <div class="calc-flag" id="calcFlag" hidden>SHOW CALCULATION</div>
+        <div class="toast" id="toast" aria-live="polite"></div>
+
+        <div class="start-hint" id="startHint">
+          <button class="start-hint-btn" id="btnStartBig" type="button">
+            <span class="play-ico" aria-hidden="true"></span>
+            <span class="sh-text">
+              <strong>Start the colony</strong>
+              <em>Chaos → first finds → trails → stable routes</em>
+            </span>
+          </button>
+          <span class="sh-sub">scroll to zoom · drag to pan · click an ant to inspect it</span>
+        </div>
+      </section>
+
+      <!-- ============================ SIDEBAR =========================== -->
+      <aside class="sidebar">
+        <section class="panel">
+          <h2 class="panel-title">Transport</h2>
+          <div class="btn-row">
+            <button class="btn primary grow" id="btnStart" type="button">Start</button>
+            <button class="btn" id="btnStep" type="button" title="Advance one simulation step">Step</button>
+            <button class="btn" id="btnReset" type="button" title="Restart this map">Reset</button>
+          </div>
+          <div class="control">
+            <div class="control-head"><label>Speed</label><span class="val" id="speedVal">1×</span></div>
+            <div class="seg" id="speedSeg" role="group" aria-label="Simulation speed">
+              <button type="button" data-speed="0.25">.25×</button>
+              <button type="button" data-speed="0.5">.5×</button>
+              <button type="button" data-speed="1" class="on">1×</button>
+              <button type="button" data-speed="2">2×</button>
+              <button type="button" data-speed="5">5×</button>
+              <button type="button" data-speed="10">10×</button>
+              <button type="button" data-speed="50">50×</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Basic</h2>
+
+          <div class="control">
+            <div class="control-head"><label for="selAnts">Ants</label></div>
+            <select id="selAnts">
+              <option value="100">100</option>
+              <option value="250" selected>250</option>
+              <option value="500">500</option>
+              <option value="1000">1000</option>
+              <option value="2000">2000</option>
+              <option value="5000">5000</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="selFood">Food sources</label></div>
+            <select id="selFood">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="5">5</option>
+              <option value="8">8</option>
+              <option value="12">12</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="selMap">Map size</label></div>
+            <select id="selMap">
+              <option value="100">Small · 100 × 100</option>
+              <option value="250" selected>Medium · 250 × 250</option>
+              <option value="500">Large · 500 × 500</option>
+              <option value="1000">Huge · 1000 × 1000</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="selScenario">Scenario</label></div>
+            <select id="selScenario">
+              <option value="open">Open field</option>
+              <option value="obstacle">Obstacle</option>
+              <option value="corridor">Narrow passage</option>
+              <option value="multiple">Multiple sources</option>
+              <option value="maze">Maze</option>
+              <option value="random">Random</option>
+            </select>
+          </div>
+
+          <button class="btn wide" id="btnNewMap" type="button">New map</button>
+        </section>
+
+        <details class="panel" id="advancedPanel">
+          <summary class="panel-title">Advanced</summary>
+
+          <div class="control">
+            <div class="control-head"><label for="rngStrength">Pheromone strength</label><span class="val" id="valStrength">0.06</span></div>
+            <input type="range" id="rngStrength" min="0.01" max="0.2" step="0.005" value="0.06" />
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="rngEvap">Evaporation</label><span class="val" id="valEvap">0.0025</span></div>
+            <input type="range" id="rngEvap" min="0.0002" max="0.02" step="0.0002" value="0.0025" />
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="rngSense">Detection radius</label><span class="val" id="valSense">6</span></div>
+            <input type="range" id="rngSense" min="3" max="16" step="1" value="6" />
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="rngFollow">Pheromone following</label><span class="val" id="valFollow">0.85</span></div>
+            <input type="range" id="rngFollow" min="0" max="1" step="0.05" value="0.85" />
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="rngRandom">Randomness</label><span class="val" id="valRandom">0.45</span></div>
+            <input type="range" id="rngRandom" min="0" max="1.5" step="0.05" value="0.45" />
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="rngSpeed">Ant speed</label><span class="val" id="valSpeed">0.30</span></div>
+            <input type="range" id="rngSpeed" min="0.08" max="0.9" step="0.02" value="0.3" />
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="rngObstacles">Obstacle count</label><span class="val" id="valObstacles">6</span></div>
+            <input type="range" id="rngObstacles" min="0" max="24" step="1" value="6" />
+          </div>
+
+          <div class="control">
+            <div class="control-head"><label for="selPheroView">Pheromone display</label></div>
+            <select id="selPheroView">
+              <option value="food" selected>Food trail</option>
+              <option value="both">Both trails</option>
+              <option value="home">Home trail</option>
+              <option value="off">Hidden</option>
+            </select>
+          </div>
+        </details>
+
+        <section class="panel inspector" id="inspectPanel" hidden>
+          <h2 class="panel-title">
+            Ant <span class="mono" id="insId">#0</span>
+            <button class="icon-btn" id="btnClearSel" type="button" title="Deselect">×</button>
+          </h2>
+          <div class="ins-grid">
+            <span class="k">State</span><span class="v" id="insState">—</span>
+            <span class="k">Carrying</span><span class="v" id="insFood">—</span>
+            <span class="k">Goal</span><span class="v" id="insGoal">—</span>
+            <span class="k">Direction</span><span class="v" id="insDir">—</span>
+            <span class="k">Speed</span><span class="v" id="insSpeed">—</span>
+            <span class="k">Decision</span><span class="v" id="insDec">—</span>
+          </div>
+          <div class="sense-block">
+            <div class="control-head"><label>Sensed pheromone</label><span class="val" id="insField">food</span></div>
+            <div class="senses">
+              <div class="sense"><span class="s-l">L</span><div class="bar"><i id="barL"></i></div></div>
+              <div class="sense"><span class="s-l">C</span><div class="bar"><i id="barC"></i></div></div>
+              <div class="sense"><span class="s-l">R</span><div class="bar"><i id="barR"></i></div></div>
+            </div>
+            <div class="sense-legend"><span>weak</span><span>strong</span></div>
+          </div>
+        </section>
+
+        <div class="sidebar-foot">
+          Every ant only senses what is directly around it — no ant knows the way.
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- ============================ HOW IT WORKS ========================= -->
+  <div class="modal" id="howModal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="howTitle">
+      <header class="modal-head">
+        <h2 id="howTitle">How it works?</h2>
+        <button class="icon-btn" id="btnCloseHow" type="button" aria-label="Close">×</button>
+      </header>
+      <ol class="steps">
+        <li><span class="n">1</span><p><strong>Ants explore.</strong> Each ant wanders using only local senses: a few samples of pheromone around its head.</p></li>
+        <li><span class="n">2</span><p><strong>Some find food.</strong> By pure chance, one ant reaches a food source and picks up a piece.</p></li>
+        <li><span class="n">3</span><p><strong>They mark the way back.</strong> Carrying food, the ant walks home and deposits a <em>food pheromone</em> trail behind it.</p></li>
+        <li><span class="n">4</span><p><strong>Others follow the strongest signal.</strong> Searching ants sample left / centre / right and turn toward the stronger trail.</p></li>
+        <li><span class="n">5</span><p><strong>Pheromones evaporate.</strong> Every step the field fades, so old and weak paths lose influence.</p></li>
+        <li><span class="n">6</span><p><strong>Weak routes disappear.</strong> Long, unlucky routes get less traffic, fade faster and are abandoned.</p></li>
+        <li><span class="n">7</span><p><strong>Stable highways emerge.</strong> Short routes collect more ants, more pheromone and stay strong. No one planned it — it self-organizes.</p></li>
+      </ol>
+      <footer class="modal-foot">
+        <span class="tip">Turn on <b>Show calculation</b> to see what each ant actually senses and decides.</span>
+        <button class="btn primary" id="btnGotIt" type="button">Got it</button>
+      </footer>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
