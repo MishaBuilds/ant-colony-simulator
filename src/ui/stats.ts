@@ -13,6 +13,7 @@ export class StatsView {
   private readonly fps = node('stFps');
   private readonly best = node('stBest');
   private readonly avg = node('stAvg');
+  private readonly coverage = node('stCoverage');
 
   update(sim: Simulation, fps: number): void {
     const m = sim.metrics;
@@ -21,6 +22,7 @@ export class StatsView {
     this.food.textContent = nf.format(Math.max(0, Math.round(m.foodLeft)));
     this.time.textContent = formatTime(m.time);
     this.steps.textContent = nf.format(m.steps);
+    this.coverage.textContent = `${(sim.coverage() * 100).toFixed(sim.coverage() < 0.1 ? 1 : 0)}%`;
     this.fps.textContent = String(Math.round(fps));
     this.best.textContent = m.bestRoute === null ? '—' : nf.format(Math.round(m.bestRoute));
     this.avg.textContent = m.delivered === 0 ? '—' : nf.format(Math.round(m.avgRoute));

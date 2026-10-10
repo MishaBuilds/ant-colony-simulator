@@ -67,13 +67,129 @@ export class World {
     this.nest.r = NEST_CELLS * this.cell;
     this.rects = layout.rects.slice();
 
-    this.rasterize();
+    this.refreshWalls();
 
     this.foods = [];
     for (const spec of layout.foods) {
       const spot = this.findFreeSpot(spec.x, spec.y, FOOD_CELLS * this.cell, rng);
       if (spot) this.foods.push(new FoodSource(spot.x, spot.y, spec.amount, FOOD_CELLS * this.cell, rng));
     }
+  }
+
+  /** Re-rasterizes obstacle rects onto the wall grid (call after editing rects). */
+  refreshWalls(): void {
+    this.rasterize();
+  }
+
+  // ------------------------------------------------------------ editor (v2)
+
+  /** Moves the nest, clamped inside the world. Returns the applied position. */
+  setNest(x: number, y: number): { x: number; y: number } {
+    const r = this.nest.r + this.cell;
+    this.nest.x = clamp(x, r, this.size - r);
+    this.nest.y = clamp(y, r, this.size - r);
+    return { x: this.nest.x, y: this.nest.y };
+  }
+
+  /**
+   * Adds an axis-aligned wall rect centred at (x, y). Size is clamped so the
+   * wall always stays inside the world. Returns the stored rect, or null when
+   * the requested size is degenerate.
+   */
+  addWall(x: number, y: number, w: number, h: number, angle = 0): RectSpec | null {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+    const cw = clamp(w, this.cell * 2, this.size * 0.6);
+    const ch = clamp(h, this.cell * 2, this.size * 0.6);
+    if (!(cw > 0 && ch > 0)) return null;
+    const cx = clamp(x, 0, this.size);
+    const cy = clamp(y, 0, this.size);
+    const rect: RectSpec = { x: cx, y: cy, w: cw, h: ch, angle: Number.isFinite(angle) ? angle : 0 };
+    this.rects.push(rect);
+    this.refreshWalls();
+    return rect;
+  }
+
+  /** Removes every wall rect containing (x, y). Returns how many were removed. */
+  removeWallsAt(x: number, y: number): number {
+    const before = this.rects.length;
+    if (before === 0) return 0;
+    const cos = (a: number): number => Math.cos(a);
+    const sin = (a: number): number => Math.sin(a);
+    this.rects = this.rects.filter((r) => {
+      const dx = x - r.x;
+      const dy = y - r.y;
+      const c = cos(-r.angle);
+      const s = sin(-r.angle);
+      const lx = Math.abs(dx * c - dy * s);
+      const ly = Math.abs(dx * s + dy * c);
+      return !(lx <= r.w / 2 && ly <= r.h / 2);
+    });
+    const removed = before - this.rects.length;
+    if (removed > 0) this.refreshWalls();
+    return removed;
+  }
+
+  /** Removes all walls. Returns how many were removed. */
+  clearWalls(): number {
+    const n = this.rects.length;
+    if (n === 0) return 0;
+    this.rects = [];
+    this.refreshWalls();
+    return n;
+  }
+
+  /**
+   * Adds a food source at (x, y). When the spot is blocked, searches nearby
+   * for a free spot the same way generated maps do. Returns null if none found.
+   */
+  addFoodAt(x: number, y: number, amount: number, rng: RNG): FoodSource | null {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const safe = Math.max(1, Math.round(Number.isFinite(amount) ? amount : 1200));
+    const radius = FOOD_CELLS * this.cell;
+    const spot = this.findFreeSpot(x, y, radius, rng);
+    if (!spot) return null;
+    const food = new FoodSource(spot.x, spot.y, safe, radius, rng);
+    this.foods.push(food);
+    return food;
+  }
+
+  /** Removes the food source whose extent contains (x, y). Returns true when removed. */
+  removeFoodAt(x: number, y: number): boolean {
+    for (let i = 0; i < this.foods.length; i++) {
+      const f = this.foods[i];
+      const reach = f.radius * 1.4;
+      const dx = x - f.x;
+      const dy = y - f.y;
+      if (dx * dx + dy * dy <= reach * reach) {
+        this.foods.splice(i, 1);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Moves food `index` to (x, y) when the destination is free. Returns success. */
+  moveFood(index: number, x: number, y: number, rng: RNG): boolean {
+    const f = this.foods[index];
+    if (!f || !Number.isFinite(x) || !Number.isFinite(y)) return false;
+    const radius = FOOD_CELLS * this.cell;
+    const spot = this.findFreeSpot(x, y, radius, rng);
+    if (!spot) return false;
+    const replacement = new FoodSource(spot.x, spot.y, f.amount, radius, rng);
+    this.foods[index] = replacement;
+    return true;
+  }
+
+  /** Index of the food source containing (x, y), or -1. */
+  foodIndexAt(x: number, y: number): number {
+    for (let i = 0; i < this.foods.length; i++) {
+      const f = this.foods[i];
+      const reach = f.radius * 1.4;
+      const dx = x - f.x;
+      const dy = y - f.y;
+      if (dx * dx + dy * dy <= reach * reach) return i;
+    }
+    return -1;
   }
 
   private rasterize(): void {
@@ -121,7 +237,7 @@ export class World {
   }
 
   /** Returns a position near the requested one that is free of walls and nest. */
-  private findFreeSpot(x: number, y: number, radius: number, rng: RNG): { x: number; y: number } | null {
+  findFreeSpot(x: number, y: number, radius: number, rng: RNG): { x: number; y: number } | null {
     const margin = radius + this.cell;
     const minNestDist = this.nest.r * 1.8 + radius;
 

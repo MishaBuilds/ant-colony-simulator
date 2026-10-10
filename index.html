@@ -33,6 +33,7 @@
         <div class="stat"><span class="k">Food left</span><span class="v" id="stFood">0</span></div>
         <div class="stat"><span class="k">Time</span><span class="v" id="stTime">0:00</span></div>
         <div class="stat"><span class="k">Steps</span><span class="v" id="stSteps">0</span></div>
+        <div class="stat"><span class="k">Explored</span><span class="v" id="stCoverage">0%</span></div>
         <div class="stat"><span class="k">FPS</span><span class="v" id="stFps">60</span></div>
         <div class="stat stat-wide"><span class="k">Best route</span><span class="v" id="stBest">—</span></div>
         <div class="stat stat-wide"><span class="k">Avg route</span><span class="v" id="stAvg">—</span></div>
@@ -71,6 +72,18 @@
         <div class="calc-flag" id="calcFlag" hidden>SHOW CALCULATION</div>
         <div class="toast" id="toast" aria-live="polite"></div>
 
+        <div class="editor-bar" id="editorBar" role="toolbar" aria-label="World editor tools">
+          <button type="button" data-tool="pan" class="on" title="Inspect / pan (1)" aria-pressed="true">Inspect</button>
+          <button type="button" data-tool="food" title="Place or remove food (2)" aria-pressed="false">Food</button>
+          <button type="button" data-tool="nest" title="Move the nest (3)" aria-pressed="false">Nest</button>
+          <button type="button" data-tool="wall" title="Draw walls (4)" aria-pressed="false">Wall</button>
+          <button type="button" data-tool="erase" title="Erase walls and food (5)" aria-pressed="false">Erase</button>
+          <span class="editor-sep" aria-hidden="true"></span>
+          <button type="button" id="btnClearWalls" title="Remove all walls">Clear walls</button>
+          <button type="button" id="btnRestoreMap" title="Regenerate this map from its seed">Restore map</button>
+        </div>
+        <div class="editor-hint" id="editorHint" aria-live="polite">Drag to pan · scroll to zoom · click an ant</div>
+
         <div class="start-hint" id="startHint">
           <button class="start-hint-btn" id="btnStartBig" type="button">
             <span class="play-ico" aria-hidden="true"></span>
@@ -84,13 +97,23 @@
       </section>
 
       <!-- ============================ SIDEBAR =========================== -->
-      <aside class="sidebar">
-        <section class="panel">
+      <aside class="sidebar" id="sidebar">
+        <nav class="mobile-nav" aria-label="Sections">
+          <a href="#panelTransport">Run</a>
+          <a href="#labPanel">Lab</a>
+          <a href="#runsPanel">Compare</a>
+          <a href="#advancedPanel">Tuning</a>
+        </nav>
+        <section class="panel" id="panelTransport">
           <h2 class="panel-title">Transport</h2>
           <div class="btn-row">
             <button class="btn primary grow" id="btnStart" type="button">Start</button>
             <button class="btn" id="btnStep" type="button" title="Advance one simulation step">Step</button>
             <button class="btn" id="btnReset" type="button" title="Restart this map">Reset</button>
+          </div>
+          <div class="exp-progress" id="expProgress" hidden>
+            <div class="control-head"><label>Experiment</label><span class="val" id="expProgressLabel">0s / 0s</span></div>
+            <div class="progress"><i id="expProgressBar"></i></div>
           </div>
           <div class="control">
             <div class="control-head"><label>Speed</label><span class="val" id="speedVal">1×</span></div>
@@ -156,6 +179,76 @@
           </div>
 
           <button class="btn wide" id="btnNewMap" type="button">New map</button>
+        </section>
+
+        <section class="panel" id="labPanel">
+          <h2 class="panel-title">Laboratory</h2>
+          <div class="control">
+            <div class="control-head"><label>Behaviour preset</label></div>
+            <div class="preset-row" id="presetRow"></div>
+          </div>
+          <div class="control">
+            <div class="control-head"><label for="labSeed">Map seed</label><span class="val">same seed + settings = same map</span></div>
+            <div class="seed-row">
+              <input class="text-input" id="labSeed" type="number" min="0" max="4294967295" step="1" inputmode="numeric" />
+              <button class="btn" id="btnSeedApply" type="button" title="Rebuild the map from this seed">Apply</button>
+              <button class="btn ghost" id="btnSeedRandom" type="button" title="Random seed">Random</button>
+            </div>
+          </div>
+          <div class="control">
+            <div class="control-head"><label for="selDuration">Experiment length</label></div>
+            <select id="selDuration">
+              <option value="0" selected>Unlimited</option>
+              <option value="60">1 minute</option>
+              <option value="180">3 minutes</option>
+              <option value="300">5 minutes</option>
+              <option value="600">10 minutes</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button class="btn grow" id="btnRunTimed" type="button" title="Reset and run until the experiment length is reached">Run experiment</button>
+          </div>
+          <div class="control-head" style="margin-top:10px"><label>Configuration file</label></div>
+          <div class="btn-row">
+            <button class="btn grow" id="btnExport" type="button" title="Download settings + map as JSON">Export</button>
+            <button class="btn grow" id="btnImport" type="button" title="Load settings + map from JSON">Import</button>
+            <input id="fileImport" type="file" accept=".json,application/json" hidden />
+          </div>
+        </section>
+
+        <section class="panel" id="runsPanel">
+          <h2 class="panel-title">Runs &amp; comparison</h2>
+          <div class="control">
+            <div class="control-head"><label for="runName">Snapshot label</label></div>
+            <div class="seed-row">
+              <input class="text-input" id="runName" type="text" maxlength="48" placeholder="e.g. highways, 500 ants" />
+              <button class="btn primary" id="btnSaveRun" type="button" title="Freeze the current result for comparison">Save</button>
+            </div>
+          </div>
+          <div class="run-pick">
+            <div class="control">
+              <div class="control-head"><label for="selRunA">Setup A</label></div>
+              <select id="selRunA"></select>
+            </div>
+            <div class="control">
+              <div class="control-head"><label for="selRunB">Setup B</label></div>
+              <select id="selRunB"></select>
+            </div>
+          </div>
+          <p class="mini-hint" id="compareEmpty">Save two snapshots to compare delivery curves, exploration and route metrics.</p>
+          <div class="chart-block">
+            <div class="control-head"><label>Food delivered over time</label><span class="val">sim seconds → units</span></div>
+            <canvas class="chart" id="chartDelivered" height="150" aria-label="Delivered food over time" role="img"></canvas>
+          </div>
+          <div class="chart-block">
+            <div class="control-head"><label>Exploration over time</label><span class="val">share of arena</span></div>
+            <canvas class="chart" id="chartCoverage" height="150" aria-label="Explored area over time" role="img"></canvas>
+          </div>
+          <div class="legend legend-inline" id="chartLegend"></div>
+          <div id="compareBody"></div>
+          <div class="control-head" style="margin-top:10px"><label>Saved runs</label></div>
+          <div class="runs-list" id="runsList"></div>
+          <button class="btn wide ghost" id="btnClearRuns" type="button">Clear saved runs</button>
         </section>
 
         <details class="panel" id="advancedPanel">
@@ -233,9 +326,16 @@
 
         <div class="sidebar-foot">
           Every ant only senses what is directly around it — no ant knows the way.
+          Keys: <span class="mono">Space</span> run · <span class="mono">→</span> step · <span class="mono">R</span> reset · <span class="mono">1–5</span> editor tools.
         </div>
       </aside>
     </main>
+
+    <div class="mobile-bar" role="toolbar" aria-label="Simulation transport">
+      <button class="btn primary grow" id="btnStartMobile" type="button">Start</button>
+      <button class="btn" id="btnStepMobile" type="button">Step</button>
+      <button class="btn" id="btnFitMobile" type="button" title="Reset camera">View</button>
+    </div>
   </div>
 
   <!-- ============================ HOW IT WORKS ========================= -->

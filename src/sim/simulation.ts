@@ -50,6 +50,13 @@ export class Simulation {
   seed = 0;
   rng: RNG;
 
+  /** True once the user edits the map by hand (HUD then shows "Custom"). */
+  customized = false;
+
+  /** Exploration coverage: which walkable world-grid cells an ant has entered. */
+  visited: Uint8Array = new Uint8Array(0);
+  visitedCount = 0;
+
   /** Shortest path found so far, kept as a polyline for the renderer. */
   bestPath: { x: Float32Array; y: Float32Array; len: number } | null = null;
 
@@ -80,6 +87,7 @@ export class Simulation {
   rebuild(seed?: number): void {
     const s = this.settings;
     this.seed = seed ?? ((Math.random() * 0xffffffff) >>> 0);
+    s.seed = this.seed;
     this.rng = new RNG(this.seed);
 
     const n = gridSizeFor(s.mapSize);
@@ -105,6 +113,7 @@ export class Simulation {
     this.world.loadLayout(this.layout, this.rng);
     this.initialFoods = this.world.foods.map((f) => ({ x: f.x, y: f.y, amount: f.maxAmount }));
 
+    this.customized = false;
     this.resetState();
   }
 
@@ -122,7 +131,6 @@ export class Simulation {
     const w = this.world;
     this.foodPhero.clear();
     this.homePhero.clear();
-
     const radius = FOOD_CELLS * w.cell;
     w.foods = this.initialFoods.map((f) => new FoodSource(f.x, f.y, f.amount, radius, this.rng));
 
@@ -138,6 +146,10 @@ export class Simulation {
     this.bestPath = null;
     this.recAnt = null;
     this.recLen = 0;
+
+    this.visited = new Uint8Array(w.n * w.n);
+    this.visitedCount = 0;
+    this.markVisited(w.nest.x, w.nest.y);
   }
 
   private spawnAnt(): Ant {
@@ -170,6 +182,184 @@ export class Simulation {
     if (!Number.isFinite(count)) return;
     this.world.setFoodCount(Math.round(count), this.foodUnit, this.rng);
     this.metrics.foodLeft = this.world.foodLeft;
+  }
+
+  /** Amount of food a newly placed source carries (scales with colony size). */
+  defaultFoodAmount(): number {
+    return this.foodUnit;
+  }
+
+  /** Empties both pheromone fields without touching ants, food or walls. */
+  clearTrails(): void {
+    this.foodPhero.clear();
+    this.homePhero.clear();
+  }
+
+  // ---------------------------------------------------------- world editor v2
+
+  /** Moves the nest; ants already out keep exploring, returners aim at the new spot. */
+  moveNest(x: number, y: number): boolean {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    let tx = x;
+    let ty = y;
+    if (this.world.blockedAt(tx, ty)) {
+      const spot = this.world.findFreeSpot(tx, ty, this.world.nest.r + this.world.cell, this.rng);
+      if (!spot) return false;
+      tx = spot.x;
+      ty = spot.y;
+    }
+    this.world.setNest(tx, ty);
+    this.customized = true;
+    this.rescueBuriedAnts();
+    this.markVisited(this.world.nest.x, this.world.nest.y);
+    return true;
+  }
+
+  /** Places a food source; returns false when no free spot exists nearby. */
+  placeFood(x: number, y: number, amount?: number): boolean {
+    const ok = this.world.addFoodAt(x, y, Math.max(1, Math.round(amount ?? this.foodUnit)), this.rng);
+    if (ok) {
+      this.customized = true;
+      this.initialFoods = this.world.foods.map((f) => ({ x: f.x, y: f.y, amount: f.maxAmount }));
+      this.metrics.foodLeft = this.world.foodLeft;
+      return true;
+    }
+    return false;
+  }
+
+  /** Removes the food source at (x, y). */
+  removeFood(x: number, y: number): boolean {
+    const ok = this.world.removeFoodAt(x, y);
+    if (ok) {
+      this.initialFoods = this.world.foods.map((f) => ({ x: f.x, y: f.y, amount: f.maxAmount }));
+      this.metrics.foodLeft = this.world.foodLeft;
+    }
+    return ok;
+  }
+
+  /** Adds a wall rect centred at (x, y) with the given world-unit size. */
+  placeWall(x: number, y: number, w: number, h: number): boolean {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    // never bury the colony: a wall covering the nest centre is rejected
+    const hw = Math.min(this.world.size * 0.6, Math.max(w, 1)) / 2;
+    const hh = Math.min(this.world.size * 0.6, Math.max(h, 1)) / 2;
+    if (Math.abs(x - this.world.nest.x) <= hw && Math.abs(y - this.world.nest.y) <= hh) return false;
+    const rect = this.world.addWall(x, y, w, h, 0);
+    if (!rect) return false;
+    this.customized = true;
+    this.rescueBuriedAnts();
+    return true;
+  }
+
+  /** Erases walls and/or food at (x, y). Returns what was removed. */
+  eraseAt(x: number, y: number): { walls: number; food: boolean } {
+    const walls = this.world.removeWallsAt(x, y);
+    const food = this.world.removeFoodAt(x, y);
+    if (walls > 0) this.customized = true;
+    if (food) {
+      this.initialFoods = this.world.foods.map((f) => ({ x: f.x, y: f.y, amount: f.maxAmount }));
+      this.metrics.foodLeft = this.world.foodLeft;
+    }
+    return { walls, food };
+  }
+
+  /** Removes every wall from the map. */
+  clearWalls(): number {
+    const n = this.world.clearWalls();
+    if (n > 0) this.customized = true;
+    return n;
+  }
+
+  /** Teleports ants that ended up inside a freshly placed wall back to the nest. */
+  private rescueBuriedAnts(): void {
+    const w = this.world;
+    for (const a of this.ants) {
+      if (w.blockedAt(a.x, a.y)) {
+        a.x = w.nest.x;
+        a.y = w.nest.y;
+        const ang = this.rng.range(0, TAU);
+        a.ux = Math.cos(ang);
+        a.uy = Math.sin(ang);
+      }
+    }
+  }
+
+  /** Serializable snapshot of the current map (feeds export + "restore map"). */
+  snapshotLayout(): WorldLayout {
+    return {
+      nest: { x: this.world.nest.x, y: this.world.nest.y },
+      rects: this.world.rects.map((r) => ({ ...r })),
+      foods: this.world.foods.map((f) => ({ x: f.x, y: f.y, amount: f.maxAmount })),
+    };
+  }
+
+  /**
+   * Replaces the current map with `layout` (validated first) and resets the
+   * experiment state. Returns a list of applied fixes, if any.
+   */
+  applyLayout(layout: WorldLayout): string[] {
+    const fixes: string[] = [];
+    const size = this.settings.mapSize;
+    const clampC = (v: number): number => (Number.isFinite(v) ? Math.min(size, Math.max(0, v)) : size / 2);
+    const nest = { x: clampC(layout.nest.x), y: clampC(layout.nest.y) };
+    const rects = (Array.isArray(layout.rects) ? layout.rects : []).slice(0, 64).map((r) => ({
+      x: clampC(r.x),
+      y: clampC(r.y),
+      w: Number.isFinite(r.w) ? clamp(r.w, 1, size * 0.6) : size * 0.1,
+      h: Number.isFinite(r.h) ? clamp(r.h, 1, size * 0.6) : size * 0.05,
+      angle: Number.isFinite(r.angle) ? clamp(r.angle, -Math.PI, Math.PI) : 0,
+    }));
+    if (rects.length !== (layout.rects ?? []).length) fixes.push('wall list trimmed to 64 entries');
+    const foods = (Array.isArray(layout.foods) ? layout.foods : []).slice(0, 12).map((f) => ({
+      x: clampC(f.x),
+      y: clampC(f.y),
+      amount: Number.isFinite(f.amount) ? clamp(Math.round(f.amount), 1, 200000) : this.foodUnit,
+    }));
+    if (foods.length === 0) {
+      foods.push({ x: size * 0.78, y: size * 0.5, amount: this.foodUnit });
+      fixes.push('empty food list: added a default source');
+    }
+    if (foods.length !== (layout.foods ?? []).length) fixes.push('food list trimmed to 12 entries');
+    this.layout = { nest, rects, foods };
+    this.world.loadLayout(this.layout, this.rng);
+    this.initialFoods = this.world.foods.map((f) => ({ x: f.x, y: f.y, amount: f.maxAmount }));
+    this.customized = true;
+    this.resetState();
+    return fixes;
+  }
+
+  // ------------------------------------------------------------- coverage v2
+
+  private markVisited(wx: number, wy: number): void {
+    const w = this.world;
+    if (this.visited.length !== w.n * w.n) {
+      this.visited = new Uint8Array(w.n * w.n);
+      this.visitedCount = 0;
+    }
+    const cx = Math.floor(wx * w.invCell);
+    const cy = Math.floor(wy * w.invCell);
+    if (cx < 0 || cy < 0 || cx >= w.n || cy >= w.n) return;
+    const i = cy * w.n + cx;
+    if (w.walls[i] === 1) return;
+    if (this.visited[i] === 0) {
+      this.visited[i] = 1;
+      this.visitedCount++;
+    }
+  }
+
+  /** Fraction of walkable cells visited by at least one ant (0..1). */
+  coverage(): number {
+    const w = this.world;
+    let walkable = 0;
+    for (let i = 0; i < w.walls.length; i++) if (w.walls[i] !== 1) walkable++;
+    if (walkable === 0) return 0;
+    return this.visitedCount / walkable;
+  }
+
+  /** Delivery rate over the experiment so far (units per simulated minute). */
+  deliveryRate(): number {
+    if (this.metrics.time <= 0) return 0;
+    return this.metrics.delivered / (this.metrics.time / 60);
   }
 
   // --------------------------------------------------------------- simulation
@@ -227,13 +417,20 @@ export class Simulation {
       const searching = ant.state === STATE_SEARCHING;
       const sdata = searching ? foodData : homeData;
 
-      // one index lookup per sensor serves both the wall test and the sample
+      // wall tests use the obstacle grid; pheromone samples use the (coarser)
+      // pheromone grid — the two resolutions differ, so each sensor needs
+      // both indexes. (Sharing one index reads misaligned cells and yields
+      // `undefined` outside the smaller field, which silently disabled
+      // trail-following across most of the map.)
       const iL = cellAt(size, n, inv, lx, ly);
       const iC = cellAt(size, n, inv, cx, cy);
       const iR = cellAt(size, n, inv, rx, ry);
-      const rawL = iL < 0 ? 0 : sdata[iL];
-      const rawC = iC < 0 ? 0 : sdata[iC];
-      const rawR = iR < 0 ? 0 : sdata[iR];
+      const pL = cellAt(size, pn, pinv, lx, ly);
+      const pC = cellAt(size, pn, pinv, cx, cy);
+      const pR = cellAt(size, pn, pinv, rx, ry);
+      const rawL = pL < 0 ? 0 : sdata[pL];
+      const rawC = pC < 0 ? 0 : sdata[pC];
+      const rawR = pR < 0 ? 0 : sdata[pR];
       const vL = iL < 0 || walls[iL] === 1 ? -1 : rawL;
       const vC = iC < 0 || walls[iC] === 1 ? -1 : rawC;
       const vR = iR < 0 || walls[iR] === 1 ? -1 : rawR;
@@ -437,6 +634,19 @@ export class Simulation {
 
       ant.x = x;
       ant.y = y;
+
+      // --- exploration coverage (one grid write per ant) ---
+      {
+        const vx = (x * inv) | 0;
+        const vy = (y * inv) | 0;
+        if (vx >= 0 && vy >= 0 && vx < n && vy < n) {
+          const vi = vy * n + vx;
+          if (walls[vi] !== 1 && this.visited[vi] === 0) {
+            this.visited[vi] = 1;
+            this.visitedCount++;
+          }
+        }
+      }
 
       // --- record a candidate route for the "best route" overlay ---
       if (this.recAnt === ant && this.recLen < REC_CAPACITY) {

@@ -24,6 +24,8 @@ export interface ControlsApi {
   setRunning(running: boolean): void;
   setCalc(on: boolean): void;
   syncChips(): void;
+  /** Re-reads every input from settings (used after presets / imports). */
+  syncInputs(): void;
 }
 
 export function bindControls(settings: Settings, actions: ControlActions): ControlsApi {
@@ -154,6 +156,23 @@ export function bindControls(settings: Settings, actions: ControlActions): Contr
     });
   }
 
+  function syncInputs(): void {
+    selAnts.value = String(settings.antCount);
+    selFood.value = String(settings.foodCount);
+    selMap.value = String(settings.mapSize);
+    selScenario.value = settings.scenario;
+    selPheroView.value = settings.pheroView;
+    for (const [id, key] of sliders) {
+      const input = document.getElementById(id) as HTMLInputElement | null;
+      if (input) input.value = String(settings[key]);
+    }
+    for (const b of speedSeg.querySelectorAll('button')) {
+      b.classList.toggle('on', Number((b as HTMLButtonElement).dataset.speed) === settings.speed);
+    }
+    syncLabels();
+    syncChips();
+  }
+
   syncLabels();
   syncChips();
 
@@ -163,6 +182,13 @@ export function bindControls(settings: Settings, actions: ControlActions): Contr
       btnStart.classList.toggle('primary', !running);
       startHint.classList.toggle('gone', running);
       btnStep.disabled = running;
+      const mStart = document.getElementById('btnStartMobile');
+      if (mStart) {
+        mStart.textContent = running ? 'Pause' : 'Start';
+        mStart.classList.toggle('primary', !running);
+      }
+      const mStep = document.getElementById('btnStepMobile') as HTMLButtonElement | null;
+      if (mStep) mStep.disabled = running;
     },
 
     setCalc(on: boolean): void {
@@ -172,6 +198,7 @@ export function bindControls(settings: Settings, actions: ControlActions): Contr
     },
 
     syncChips,
+    syncInputs,
   };
 }
 

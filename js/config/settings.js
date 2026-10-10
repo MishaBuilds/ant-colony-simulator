@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS = {
     antSpeed: 0.3,
     obstacleCount: 6,
     pheroView: 'food',
+    seed: 0,
+    experimentSeconds: 0,
 };
 /** Bounds for every numeric setting — used for live sanitising. */
 export const RANGES = {
@@ -43,6 +45,8 @@ export const RANGES = {
     antSpeed: [0.08, 0.9],
     obstacleCount: [0, 24],
     pheroView: null,
+    seed: [0, 4294967295],
+    experimentSeconds: [0, 3600],
 };
 const SCENARIO_KEYS = ['open', 'obstacle', 'corridor', 'multiple', 'maze', 'random'];
 const PHERO_VIEWS = ['food', 'both', 'home', 'off'];
@@ -80,6 +84,8 @@ export function sanitizeSettings(raw) {
     out.foodCount = Math.round(out.foodCount);
     out.obstacleCount = Math.round(out.obstacleCount);
     out.detectionRadius = Math.round(out.detectionRadius);
+    out.seed = Math.round(out.seed) >>> 0;
+    out.experimentSeconds = Math.round(out.experimentSeconds);
     return out;
 }
 /**

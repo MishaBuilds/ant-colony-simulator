@@ -98,6 +98,7 @@ export class Renderer {
         this.drawNest(sim, opts.time, unit);
         this.drawFoods(sim, unit);
         this.drawBestPath(sim, unit);
+        this.drawEditorOverlay(sim, unit, opts);
         this.drawAnts(sim, scale, unit, opts.showCalc);
         if (opts.selected)
             this.drawSelection(sim, opts.selected, unit);
@@ -281,6 +282,56 @@ export class Renderer {
                 ctx.arc(f.x + d.x * R, f.y + d.y * R, dotR, 0, Math.PI * 2);
             }
             ctx.fill();
+        }
+    }
+    drawEditorOverlay(sim, unit, opts) {
+        const ctx = this.ctx;
+        const cell = sim.world.cell;
+        const g = opts.ghostWall;
+        if (g && g.w >= 0 && g.h >= 0) {
+            ctx.save();
+            ctx.setLineDash([Math.max(4 * unit, cell * 1.2), Math.max(3 * unit, cell)]);
+            ctx.strokeStyle = 'rgba(88, 214, 168, 0.85)';
+            ctx.lineWidth = Math.max(1.4 * unit, cell * 0.14);
+            ctx.strokeRect(g.x, g.y, Math.max(g.w, cell), Math.max(g.h, cell));
+            ctx.restore();
+        }
+        const hov = opts.hover;
+        if (!hov)
+            return;
+        const pulse = 1 + 0.06 * Math.sin(Date.now() / 280);
+        if (hov.tool === 'food') {
+            ctx.save();
+            ctx.setLineDash([Math.max(3 * unit, cell * 0.8), Math.max(3 * unit, cell * 0.8)]);
+            ctx.strokeStyle = 'rgba(207, 233, 141, 0.8)';
+            ctx.lineWidth = Math.max(1.2 * unit, cell * 0.12);
+            ctx.beginPath();
+            ctx.arc(hov.x, hov.y, cell * 5 * pulse, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        else if (hov.tool === 'nest') {
+            ctx.save();
+            ctx.setLineDash([Math.max(3 * unit, cell * 0.8), Math.max(3 * unit, cell * 0.8)]);
+            ctx.strokeStyle = 'rgba(232, 169, 78, 0.85)';
+            ctx.lineWidth = Math.max(1.2 * unit, cell * 0.12);
+            ctx.beginPath();
+            ctx.arc(hov.x, hov.y, sim.world.nest.r * pulse, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        else if (hov.tool === 'erase') {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(224, 112, 95, 0.8)';
+            ctx.lineWidth = Math.max(1.4 * unit, cell * 0.14);
+            const r = cell * 3 * pulse;
+            ctx.beginPath();
+            ctx.moveTo(hov.x - r, hov.y - r);
+            ctx.lineTo(hov.x + r, hov.y + r);
+            ctx.moveTo(hov.x + r, hov.y - r);
+            ctx.lineTo(hov.x - r, hov.y + r);
+            ctx.stroke();
+            ctx.restore();
         }
     }
     drawBestPath(sim, unit) {

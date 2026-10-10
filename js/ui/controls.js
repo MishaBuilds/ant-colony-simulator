@@ -120,6 +120,23 @@ export function bindControls(settings, actions) {
                 actions.onHint('Obstacle count applies to the next map.');
         });
     }
+    function syncInputs() {
+        selAnts.value = String(settings.antCount);
+        selFood.value = String(settings.foodCount);
+        selMap.value = String(settings.mapSize);
+        selScenario.value = settings.scenario;
+        selPheroView.value = settings.pheroView;
+        for (const [id, key] of sliders) {
+            const input = document.getElementById(id);
+            if (input)
+                input.value = String(settings[key]);
+        }
+        for (const b of speedSeg.querySelectorAll('button')) {
+            b.classList.toggle('on', Number(b.dataset.speed) === settings.speed);
+        }
+        syncLabels();
+        syncChips();
+    }
     syncLabels();
     syncChips();
     return {
@@ -128,6 +145,14 @@ export function bindControls(settings, actions) {
             btnStart.classList.toggle('primary', !running);
             startHint.classList.toggle('gone', running);
             btnStep.disabled = running;
+            const mStart = document.getElementById('btnStartMobile');
+            if (mStart) {
+                mStart.textContent = running ? 'Pause' : 'Start';
+                mStart.classList.toggle('primary', !running);
+            }
+            const mStep = document.getElementById('btnStepMobile');
+            if (mStep)
+                mStep.disabled = running;
         },
         setCalc(on) {
             el('btnCalc').setAttribute('aria-pressed', String(on));
@@ -135,6 +160,7 @@ export function bindControls(settings, actions) {
             document.getElementById('canvas')?.classList.toggle('picking', on);
         },
         syncChips,
+        syncInputs,
     };
 }
 function el(id) {

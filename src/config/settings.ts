@@ -20,6 +20,10 @@ export interface Settings {
   antSpeed: number; // travel per step, in grid cells
   obstacleCount: number; // used by random / maze / multiple scenarios
   pheroView: PheroView; // pheromone heatmap layer
+
+  // --- lab (v2) ---
+  seed: number; // last map seed; 0 means "random on next rebuild"
+  experimentSeconds: number; // auto-stop after N sim-seconds; 0 = unlimited
 }
 
 export const SCENARIOS: { key: ScenarioKey; label: string }[] = [
@@ -53,6 +57,9 @@ export const DEFAULT_SETTINGS: Settings = {
   antSpeed: 0.3,
   obstacleCount: 6,
   pheroView: 'food',
+
+  seed: 0,
+  experimentSeconds: 0,
 };
 
 type Range = [min: number, max: number];
@@ -72,6 +79,8 @@ export const RANGES: Record<keyof Settings, Range | null> = {
   antSpeed: [0.08, 0.9],
   obstacleCount: [0, 24],
   pheroView: null,
+  seed: [0, 4294967295],
+  experimentSeconds: [0, 3600],
 };
 
 const SCENARIO_KEYS: ScenarioKey[] = ['open', 'obstacle', 'corridor', 'multiple', 'maze', 'random'];
@@ -116,6 +125,8 @@ export function sanitizeSettings(raw: Partial<Settings>): Settings {
   out.foodCount = Math.round(out.foodCount);
   out.obstacleCount = Math.round(out.obstacleCount);
   out.detectionRadius = Math.round(out.detectionRadius);
+  out.seed = Math.round(out.seed) >>> 0;
+  out.experimentSeconds = Math.round(out.experimentSeconds);
 
   return out;
 }
